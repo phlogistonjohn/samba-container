@@ -1,0 +1,20 @@
+{
+  "samba-container-config": "v0",
+  "users": {
+    "all_entries": [
+      {
+        "name": "john",
+        "password": "fooBar9009"
+      },
+      {
+        "name": "melvin",
+        "password": "123fakestreet"
+      },
+      {
+        "name": "rupert",
+        "password": "something_else_88"
+      }
+    ]
+  },
+  "_footer": 1
+}
