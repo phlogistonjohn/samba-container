@@ -2,7 +2,7 @@
 
 set -e
 
-D=""
+D="--detach"
 
 podman run $D -it --rm  \
     --name smbdemo1  -p 4451:445 \

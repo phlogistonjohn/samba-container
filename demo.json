@@ -18,7 +18,7 @@
       "globals": [
         "default"
       ],
-      "instance_name": "SAMBA"
+      "instance_name": "MYSERVER"
     }
   },
   "shares": {
@@ -37,7 +37,7 @@
     },
     "two": {
       "options": {
-        "path": "/share",
+        "path": "/mnt/two",
         "read only": "no"
       }
     }
@@ -66,6 +66,5 @@
         "password": "letMe1n"
       }
     ]
-  },
-  "_footer": 1
+  }
 }
