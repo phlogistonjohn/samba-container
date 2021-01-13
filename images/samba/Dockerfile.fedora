@@ -1,6 +1,6 @@
 FROM quay.io/phlogistonjohn/sambacc:default AS builder
 
-RUN /usr/local/bin/build.sh d4d15b1f826e
+RUN /usr/local/bin/build.sh f6059ee6f80c
 
 FROM fedora
 
