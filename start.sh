@@ -18,7 +18,7 @@ podman run $D -it --rm  \
     samba-container:jjm
 
 podman run $D -it --rm  \
-    -e SAMBA_CONTAINER_ID=demo2 --name smbdemo3 -p 4453:445 \
+    -e SAMBA_CONTAINER_ID=demo3 --name smbdemo3 -p 4453:445 \
     -v $PWD/demo.json:/etc/samba/container.json \
     -v $PWD/altusers.json:/etc/samba/users.json \
     --tmpfs=/mnt/one:rw,mode=1777 \

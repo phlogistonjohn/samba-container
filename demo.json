@@ -19,6 +19,16 @@
         "default"
       ],
       "instance_name": "MYSERVER"
+    },
+    "demo3": {
+      "shares": [
+        "one",
+        "two"
+      ],
+      "globals": [
+        "default"
+      ],
+      "instance_name": "OTHERSERVER"
     }
   },
   "shares": {
@@ -66,5 +76,6 @@
         "password": "letMe1n"
       }
     ]
-  }
+  },
+  "_hello_world": "100"
 }
