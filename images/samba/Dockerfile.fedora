@@ -14,6 +14,7 @@ COPY --from=builder \
 RUN dnf install -y \
     findutils \
     python-pip \
+    python3-jsonschema \
     python3-samba \
     samba \
     samba-client \
