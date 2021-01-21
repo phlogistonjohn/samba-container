@@ -18,6 +18,8 @@ RUN dnf install -y \
     python3-samba \
     samba \
     samba-client \
+    samba-winbind \
+    samba-winbind-clients \
     tdb-tools \
     && pip install /tmp/sambacc-$SAMBACC_VERSION-py3-none-any.whl \
     && rm -f /tmp/sambacc-$SAMBACC_VERSION-py3-none-any.whl \
