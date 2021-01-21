@@ -29,6 +29,16 @@
         "default"
       ],
       "instance_name": "OTHERSERVER"
+    },
+    "wbtest": {
+      "shares": [
+        "share"
+      ],
+      "globals": [
+        "noprinting",
+        "wbtest"
+      ],
+      "instance_name": "WB1"
     }
   },
   "shares": {
@@ -63,9 +73,28 @@
         "disable spoolss": "yes",
         "guest ok": "no"
       }
+    },
+    "noprinting": {
+      "options": {
+        "load printers": "no",
+        "printing": "bsd",
+        "printcap name": "/dev/null",
+        "disable spoolss": "yes"
+      }
+    },
+    "wbtest": {
+      "options": {
+        "security": "ads",
+        "workgroup": "ZZZ-BEST",
+        "realm": "ZZZ-BEST.X.ASYNCHRONO.US",
+        "server min protocol": "SMB2",
+        "idmap config * : backend": "autorid",
+        "idmap config * : range": "2000-9999999",
+        "winbind use default domain": "yes"
+      }
     }
   },
-  "users": {
+  "_users": {
     "all_entries": [
       {
         "name": "sambauser",
