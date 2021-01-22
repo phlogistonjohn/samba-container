@@ -1,0 +1,3 @@
+
+ podman run --rm --dns=192.168.122.243 -it -v $PWD:/srv/scratch --entrypoint bash -e SAMBA_CONTAINER_ID=wbtest -e SAMBACC_CONFIG="/srv/scratch/demo.json"   samba-container:jjm -c "pip install --force /srv/scratch/sambacc-0.1-py3-none-any.whl &&   samba-container --password=Passw0rd run --insecure-auto-join winbindd"
+
