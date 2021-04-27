@@ -3,7 +3,7 @@ FROM quay.io/samba.org/sambacc:latest AS builder
 # the changeset hash on the next line ensures we get a specifc
 # version of sambacc. When sambacc actually gets tagged, it should
 # be changed to use the tag.
-RUN /usr/local/bin/build.sh 9d6eaf59c7f6 https://github.com/phlogistonjohn/sambacc.git
+RUN /usr/local/bin/build.sh e4668c84b9bd https://github.com/phlogistonjohn/sambacc.git
 
 FROM fedora
 
