@@ -1,6 +1,6 @@
 FROM quay.io/samba.org/sambacc:latest AS builder
-ARG SAMBACC_VER=master
-ARG SAMBACC_REPO=https://github.com/samba-in-kubernetes/sambacc
+ARG SAMBACC_VER=jjm-ctdb-netx
+ARG SAMBACC_REPO=https://github.com/phlogistonjohn/sambacc
 
 # The SAMBACC_VER value controls what version of sambacc we'll be building.
 # This can be a branch name, a tag, or a version hash.  When building tagged
