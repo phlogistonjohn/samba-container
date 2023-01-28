@@ -1,0 +1,21 @@
+ARG BASE_IMAGE registry.fedoraproject.org/fedora:37
+FROM $BASE_IMAGE
+
+RUN true \
+    && dnf install -y git gcc /usr/bin/rpmbuild "dnf-command(builddep)" \
+    && dnf clean all
+RUN mkdir -p -m 0777 /srv/build /usr/local/lib/sources
+COPY samba.pamd \
+    README.downgrade  \
+    samba-master.spec \
+    smb.conf.example \
+    pam_winbind.conf \
+    samba.logrotate  \
+    smb.conf.vendor \
+    /usr/local/lib/sources
+COPY samba-from-source.py /usr/local/bin/samba-from-source.py
+RUN /usr/local/bin/samba-from-source.py \
+    --skip-build \
+    --with-ceph \
+    --install-deps-from=/usr/local/lib/sources/samba-master.spec
+ENTRYPOINT ["/usr/local/bin/samba-from-source.py"]
