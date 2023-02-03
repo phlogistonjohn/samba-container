@@ -13,6 +13,7 @@ log = logging.getLogger()
 
 
 def run(cmd_args, check=True, **kwargs):
+    log.info("Running Command: %s", cmd_args)
     return subprocess.run(cmd_args, check=check, **kwargs)
 
 
@@ -155,8 +156,9 @@ def install_deps(cli, deps_src):
         pre_pkgs.append("epel-release")
         pre_pkgs.append("centos-release-gluster")
         pre_pkgs.append("centos-release-ceph")
-    run(["dnf", "install", "-y"] + pre_pkgs)
-    dnf_cmd = ["dnf", "builddep", "-y"]
+    # TODO: conditionalize keepcache
+    run(["dnf", "install", "--setopt=keepcache=True", "-y"] + pre_pkgs)
+    dnf_cmd = ["dnf", "builddep", "-y", "--setopt=keepcache=True"]
     if cli.with_ceph:
         dnf_cmd.append("--define=with_vfs_cephfs 1")
         dnf_cmd.append("--define=with_vfs_cephfs 1")
@@ -184,8 +186,7 @@ def build_rpm(cli, vinfo, srpm):
     run(cmd)
 
 
-def parse_cli():
-    parser = argparse.ArgumentParser()
+def set_arguments(parser):
     parser.add_argument(
         "--samba-source",
         default="/srv/build/samba",
@@ -234,6 +235,11 @@ def parse_cli():
         action="store_true",
         help="Enable building Ceph components",
     )
+
+
+def parse_cli():
+    parser = argparse.ArgumentParser()
+    set_arguments(parser)
     cli = parser.parse_args()
     return cli
 
