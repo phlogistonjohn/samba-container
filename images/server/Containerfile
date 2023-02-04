@@ -1,4 +1,8 @@
-FROM quay.io/samba.org/sambacc:latest AS builder
+FROM quay.io/samba.org/sambacc:latest AS builderscript
+
+FROM registry.fedoraproject.org/fedora:37 as builder
+COPY --from=builderscript /usr/local/bin/build.sh /usr/local/bin/build.sh
+RUN /usr/local/bin/build.sh --install -v
 ARG SAMBACC_VER=master
 ARG SAMBACC_REPO=https://github.com/samba-in-kubernetes/sambacc
 
@@ -9,7 +13,7 @@ ARG SAMBACC_REPO=https://github.com/samba-in-kubernetes/sambacc
 RUN SAMBACC_DISTNAME=latest \
     /usr/local/bin/build.sh ${SAMBACC_VER} ${SAMBACC_REPO}
 
-FROM registry.fedoraproject.org/fedora:36
+FROM registry.fedoraproject.org/fedora:37
 ARG INSTALL_PACKAGES_FROM=default
 ARG SAMBA_VERSION_SUFFIX=""
 ARG SAMBA_SPECIFICS=daemon_cli_debug_output,ctdb_leader_admin_command
