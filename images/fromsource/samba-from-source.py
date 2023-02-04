@@ -246,7 +246,10 @@ def parse_cli():
 
 def main():
     cli = parse_cli()
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="samba-from-source.py: %(asctime)s: %(levelname)s: %(message)s",
+    )
 
     if cli.install_deps_from:
         install_deps(cli, cli.install_deps_from)
