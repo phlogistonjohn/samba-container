@@ -65,10 +65,13 @@ build: build-server build-nightly-server build-ad-server build-client \
 build-server: $(BUILDFILE_SERVER)
 .PHONY: build-server
 $(BUILDFILE_SERVER): Makefile $(SERVER_SRC_FILE) $(SERVER_SOURCES)
-	$(BUILD_CMD) \
-		--tag $(SERVER_NAME) --tag $(SERVER_REPO_NAME) \
-		-f $(SERVER_SRC_FILE) $(SERVER_DIR)
-	$(CONTAINER_CMD) inspect -f '{{.Id}}' $(SERVER_NAME) > $(BUILDFILE_SERVER)
+	$(MAKE) img-build BUILD_ARGS=""  \
+		EXTRA_BUILD_ARGS="$(EXTRA_BUILD_ARGS)" \
+		SHORT_NAME=$(SERVER_NAME) \
+		REPO_NAME=$(SERVER_REPO_NAME) \
+		SRC_FILE=$(SERVER_SRC_FILE) \
+		DIR=$(SERVER_DIR) \
+		BUILDFILE=$(BUILDFILE_SERVER)
 
 build-nightly-server: $(BUILDFILE_NIGHTLY_SERVER)
 .PHONY: build-nightly-server
@@ -154,3 +157,14 @@ check-shell-scripts:
 clean:
 	$(RM) $(BUILDFILE_SERVER) $(BUILDFILE_NIGHTLY_SERVER) $(BUILDFILE_AD_SERVER) $(BUILDFILE_NIGHTLY_AD_SERVER) $(BUILDFILE_CLIENT) $(BUILDFILE_TOOLBOX)
 .PHONY: clean
+
+img-build:
+	$(BUILD_CMD) \
+		$(BUILD_ARGS) \
+		$(EXTRA_BUILD_ARGS) \
+		--tag $(SHORT_NAME) \
+		--tag $(REPO_NAME) \
+		-f $(SRC_FILE) \
+		$(DIR)
+	$(CONTAINER_CMD) inspect -f '{{.Id}}' $(SHORT_NAME) > $(BUILDFILE)
+.PHONY: img-build
