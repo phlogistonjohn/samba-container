@@ -1,9 +1,12 @@
-ARG BASE_IMAGE registry.fedoraproject.org/fedora:37
+ARG BASE_IMAGE=registry.fedoraproject.org/fedora:37
 FROM $BASE_IMAGE
 
+ARG CLEAN_DNF
 RUN true \
-    && dnf install -y git gcc /usr/bin/rpmbuild "dnf-command(builddep)" \
-    && dnf clean all
+    && cmd=(dnf install) \
+    && if [ "${CLEAN_DNF}" != "no" ]; then cmd+=("--setopt=keepcache=True"); fi \
+    && "${cmd[@]}" -y git gcc /usr/bin/rpmbuild "dnf-command(builddep)" \
+    && if [ "${CLEAN_DNF}" != "no" ]; then dnf clean all; fi
 RUN mkdir -p -m 0777 /srv/build /usr/local/lib/sources
 COPY samba.pamd \
     README.downgrade  \
@@ -14,6 +17,7 @@ COPY samba.pamd \
     smb.conf.vendor \
     /usr/local/lib/sources
 COPY samba-from-source.py /usr/local/bin/samba-from-source.py
+ENV INSIDE_CONTAINER=1
 RUN /usr/local/bin/samba-from-source.py \
     --skip-build \
     --with-ceph \
