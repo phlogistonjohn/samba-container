@@ -148,6 +148,23 @@ def _is_centos():
     return False
 
 
+def _dnf_prefix(cli):
+    cmd = ["dnf"]
+    if cli.keep_dnf:
+        cmd.append("--setopt=keepcache=True")
+    return cmd
+
+
+def bootstrap_distro(cli):
+    pkgs = [
+        "git",
+        "gcc",
+        "/usr/bin/rpmbuild",
+        "dnf-command(builddep)",
+    ]
+    run(_dnf_prefix(cli) + ["install", "-y"] + pkgs)
+
+
 def install_deps(cli, deps_src):
     log.info("Installing build dependencies")
     is_centos = _is_centos()
@@ -157,7 +174,7 @@ def install_deps(cli, deps_src):
         pre_pkgs.append("centos-release-gluster")
         pre_pkgs.append("centos-release-ceph")
     # TODO: conditionalize keepcache
-    run(["dnf", "install", "--setopt=keepcache=True", "-y"] + pre_pkgs)
+    run(_dnf_prefix(cli) + ["install", "-y"] + pre_pkgs)
     dnf_cmd = ["dnf", "builddep", "-y", "--setopt=keepcache=True"]
     if cli.with_ceph:
         dnf_cmd.append("--define=with_vfs_cephfs 1")
@@ -167,6 +184,8 @@ def install_deps(cli, deps_src):
         dnf_cmd.append("--enablerepo=resilientstorage")
     dnf_cmd.append(deps_src)
     run(dnf_cmd)
+    if not cli.keep_dnf:
+        run(["dnf", "clean", "all"])
 
 
 def build_rpm(cli, vinfo, srpm):
@@ -226,6 +245,16 @@ def set_arguments(parser):
         help="Even if a repo already exists try to checkout the supplied git ref",
     )
     parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Bootstrap environment & install critical dependency packages",
+    )
+    parser.add_argument(
+        "--keep-dnf",
+        action="store_true",
+        help="Enable pesistent dnf state. Do not clean dnf.",
+    )
+    parser.add_argument(
         "--skip-build",
         action="store_true",
         help="Do not build packages",
@@ -250,6 +279,9 @@ def main():
         level=logging.INFO,
         format="samba-from-source.py: %(asctime)s: %(levelname)s: %(message)s",
     )
+
+    if cli.bootstrap:
+        bootstrap_distro(cli)
 
     if cli.install_deps_from:
         install_deps(cli, cli.install_deps_from)
