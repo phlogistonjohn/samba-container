@@ -12,12 +12,25 @@ import sys
 log = logging.getLogger()
 
 
-def run(cmd_args, check=True, **kwargs):
-    log.info("Running Command: %s", cmd_args)
-    return subprocess.run(cmd_args, check=check, **kwargs)
+def _is_centos():
+    try:
+        with open("/etc/os-release") as fh:
+            for line in fh:
+                if line.startswith("ID=") and "centos" in line:
+                    return True
+    except (OSError, IOError):
+        pass
+    return False
 
 
-def has_source(src_path):
+def _dnf_prefix(cli):
+    cmd = ["dnf"]
+    if cli.keep_dnf:
+        cmd.append("--setopt=keepcache=True")
+    return cmd
+
+
+def _has_source(src_path):
     return src_path.is_dir() and (src_path / ".git").is_dir()
 
 
@@ -30,10 +43,21 @@ def _write_dir(cli):
     return wdir
 
 
+def _fmt_rpm_version(vinfo):
+    return f"{vinfo['git_date']}.{vinfo['git_hash']}"
+
+
+def run(cmd_args, check=True, **kwargs):
+    """Wrapper for subprocess.run with logging and result check enabled."""
+    log.info("Running Command: %s", cmd_args)
+    return subprocess.run(cmd_args, check=check, **kwargs)
+
+
 def get_samba_source(cli):
+    """Validate or fetch the git tree for samba."""
     log.info("Setting up build sources")
     src_path = pathlib.Path(cli.samba_source)
-    if has_source(src_path):
+    if _has_source(src_path):
         log.info(f"found samba source dir: {src_path}")
         if cli.force_ref:
             run(["git", "checkout", cli.git_ref], cwd=src_path)
@@ -44,6 +68,7 @@ def get_samba_source(cli):
 
 
 def get_samba_version_info(cli):
+    """Return a dict containing versioning info from git."""
     log.info("Getting build version info")
     results = {}
     src_path = pathlib.Path(cli.samba_source)
@@ -68,14 +93,10 @@ def get_samba_version_info(cli):
     return results
 
 
-def fmt_rpm_version(vinfo):
-    return f"{vinfo['git_date']}.{vinfo['git_hash']}"
-
-
 def genrate_samba_tarball(cli, vinfo):
     log.info("Building source tarball")
     src_path = pathlib.Path(cli.samba_source)
-    rpm_version = fmt_rpm_version(vinfo)
+    rpm_version = _fmt_rpm_version(vinfo)
     dest = _write_dir(cli) / f"samba-{rpm_version}.tar.gz"
     dest.parent.mkdir(parents=True, exist_ok=True)
     run(
@@ -92,7 +113,7 @@ def genrate_samba_tarball(cli, vinfo):
 
 def generate_srpm(cli, vinfo):
     log.info("Building source rpm")
-    rpm_version = fmt_rpm_version(vinfo)
+    rpm_version = _fmt_rpm_version(vinfo)
     wdir = _write_dir(cli)
     shutil.copytree(cli.package_source, wdir, dirs_exist_ok=True)
 
@@ -122,8 +143,9 @@ def generate_srpm(cli, vinfo):
 
 
 def find_srpm(cli, vinfo):
+    """Return the path to a matching srpm to build."""
     log.info("Selecting source rpm")
-    rpm_version = fmt_rpm_version(vinfo)
+    rpm_version = _fmt_rpm_version(vinfo)
     wdir = _write_dir(cli)
     srpm = None
     for (path, dirs, files) in os.walk(wdir):
@@ -137,25 +159,8 @@ def find_srpm(cli, vinfo):
     return srpm
 
 
-def _is_centos():
-    try:
-        with open("/etc/os-release") as fh:
-            for line in fh:
-                if line.startswith("ID=") and "centos" in line:
-                    return True
-    except (OSError, IOError):
-        pass
-    return False
-
-
-def _dnf_prefix(cli):
-    cmd = ["dnf"]
-    if cli.keep_dnf:
-        cmd.append("--setopt=keepcache=True")
-    return cmd
-
-
 def bootstrap_distro(cli):
+    """Install the most basic dependencies."""
     log.info("Installing basic dependencies")
     pkgs = [
         "git",
@@ -167,6 +172,7 @@ def bootstrap_distro(cli):
 
 
 def install_deps(cli, deps_src):
+    """Install dependencies derived from the SRPM."""
     log.info("Installing build dependencies")
     is_centos = _is_centos()
     pre_pkgs = ["dnf-command(builddep)"]
@@ -192,6 +198,7 @@ def install_deps(cli, deps_src):
 
 
 def build_rpm(cli, vinfo, srpm):
+    """Build RPMs from a source RPM."""
     log.info("Building RPMs")
     wdir = _write_dir(cli)
     cmd = [
@@ -209,6 +216,8 @@ def build_rpm(cli, vinfo, srpm):
 
 
 def set_arguments(parser):
+    """Set up the arguments that the script will use."""
+    # This function is reused within the "outer" build script
     parser.add_argument(
         "--samba-source",
         default="/srv/build/samba",
@@ -270,7 +279,18 @@ def set_arguments(parser):
 
 
 def parse_cli():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="""
+Automate building samba packages within an OCI container environment.
+You can build samba packages from a git url and ref. You can build from a local
+checkout by passing the directory in as a volume.  This script only builds from
+changes that are commited.
+
+Packages will be written to the workdir. If the workdir is not passed in
+as a volume to the container the build will not be preserved when the
+container exits.
+"""
+    )
     set_arguments(parser)
     cli = parser.parse_args()
     return cli
