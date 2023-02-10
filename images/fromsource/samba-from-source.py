@@ -156,6 +156,7 @@ def _dnf_prefix(cli):
 
 
 def bootstrap_distro(cli):
+    log.info("Installing basic dependencies")
     pkgs = [
         "git",
         "gcc",
@@ -173,9 +174,8 @@ def install_deps(cli, deps_src):
         pre_pkgs.append("epel-release")
         pre_pkgs.append("centos-release-gluster")
         pre_pkgs.append("centos-release-ceph")
-    # TODO: conditionalize keepcache
     run(_dnf_prefix(cli) + ["install", "-y"] + pre_pkgs)
-    dnf_cmd = ["dnf", "builddep", "-y", "--setopt=keepcache=True"]
+    dnf_cmd = _dnf_prefix(cli) + ["builddep", "-y"]
     if cli.with_ceph:
         dnf_cmd.append("--define=with_vfs_cephfs 1")
         dnf_cmd.append("--define=with_vfs_cephfs 1")
@@ -184,7 +184,10 @@ def install_deps(cli, deps_src):
         dnf_cmd.append("--enablerepo=resilientstorage")
     dnf_cmd.append(deps_src)
     run(dnf_cmd)
+
     if not cli.keep_dnf:
+        # the dnf caches are "part of" the container. delete them so
+        # to keep the image's layer cleaner
         run(["dnf", "clean", "all"])
 
 
