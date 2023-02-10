@@ -29,7 +29,7 @@ def host_build_image(cli, engine):
     if cli.base_image:
         cmd.append(f"--build-arg=BASE_IMAGE={cli.base_image}")
     if dnf_args:
-        cmd.append(f"--build-arg=CLEAN_DNF=no")
+        cmd.append(f"--build-arg=EXTRA_OPTS=--keep-dnf")
     tag = "dev"
     if cli.job:
         tag = f"dev-{cli.job}"
