@@ -1,13 +1,6 @@
 ARG BASE_IMAGE=registry.fedoraproject.org/fedora:37
 FROM $BASE_IMAGE
 
-ARG CLEAN_DNF
-RUN true \
-    && cmd=(dnf install) \
-    && if [ "${CLEAN_DNF}" != "no" ]; then cmd+=("--setopt=keepcache=True"); fi \
-    && "${cmd[@]}" -y git gcc /usr/bin/rpmbuild "dnf-command(builddep)" \
-    && if [ "${CLEAN_DNF}" != "no" ]; then dnf clean all; fi
-RUN mkdir -p -m 0777 /srv/build /usr/local/lib/sources
 COPY samba.pamd \
     README.downgrade  \
     samba-master.spec \
@@ -17,9 +10,12 @@ COPY samba.pamd \
     smb.conf.vendor \
     /usr/local/lib/sources
 COPY samba-from-source.py /usr/local/bin/samba-from-source.py
-ENV INSIDE_CONTAINER=1
+RUN mkdir -p -m 0777 /srv/build /usr/local/lib/sources
+ARG EXTRA_OPTS=""
 RUN /usr/local/bin/samba-from-source.py \
+    --bootstrap \
     --skip-build \
     --with-ceph \
-    --install-deps-from=/usr/local/lib/sources/samba-master.spec
+    --install-deps-from=/usr/local/lib/sources/samba-master.spec \
+    $EXTRA_OPTS
 ENTRYPOINT ["/usr/local/bin/samba-from-source.py"]
