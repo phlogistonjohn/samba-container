@@ -36,6 +36,7 @@ dnf install --setopt=install_weak_deps=False -y \
     "samba-winbind-clients${samba_version_suffix}" \
     "samba-vfs-cephfs${samba_version_suffix}" \
     "samba-vfs-iouring${samba_version_suffix}" \
+    "samba-debuginfo" \
     tdb-tools \
     "ctdb${samba_version_suffix}"
 dnf clean all
