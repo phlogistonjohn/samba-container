@@ -60,6 +60,19 @@ OS_PREFIX=$(addsuffix -,$(OS_NAME))
 TAG=$(OS_PREFIX)latest
 NIGHTLY_TAG=$(OS_PREFIX)nightly
 
+ifneq ($(FROM_FULL_TAG),)
+	tagterms:=$(subst -, ,$(FROM_FULL_TAG))
+	PKG_ORIGIN:=$(wordlist 1,1,$(tagterms))
+	OS_NAME:=$(wordlist 2,2,$(tagterms))
+	IMG_ARCH:=$(wordlist 3,3,$(tagterms))
+endif
+
+HOST_ARCH:=$(shell arch)
+ifeq ($(IMG_ARCH),)
+	IMG_ARCH:=$(subst aarch64,arm64,$(subst x86_64,amd64,$(HOST_ARCH)))
+endif
+FULL_TAG=$(PKG_ORIGIN)-$(OS_NAME)-$(IMG_ARCH)
+
 
 SERVER_NAME=samba-server:$(TAG)
 NIGHTLY_SERVER_NAME=samba-server:$(NIGHTLY_TAG)
@@ -131,37 +144,69 @@ debug-vars:
 	@echo AD_SERVER_SRC_FILE: $(AD_SERVER_SRC_FILE)
 	@echo CLIENT_SERVER_SRC_FILE: $(CLIENT_SRC_FILE)
 	@echo TOOLBOX_SRC_FILE: $(TOOLBOX_SRC_FILE)
+	@echo PKG_ORIGIN=$(PKG_ORIGIN) IMG_ARCH=$(IMG_ARCH)
 
 
 ### Image Build and Push Rules ###
 
-build-server: $(BUILDFILE_SERVER)
-.PHONY: build-server
-$(BUILDFILE_SERVER): Makefile $(SERVER_SRC_FILE) $(SERVER_SOURCES)
+$(BUILDFILE_PREFIX).server.%: Makefile $(SERVER_SRC_FILE) $(SERVER_SOURCES)
 	$(MAKE) _img_build \
 		BUILD_ARGS=""  \
 		EXTRA_BUILD_ARGS="$(EXTRA_BUILD_ARGS)" \
-		SHORT_NAME=$(SERVER_NAME) \
-		REPO_NAME=$(SERVER_REPO_NAME) \
+		SHORT_NAME=samba-server \
 		SRC_FILE=$(SERVER_SRC_FILE) \
 		DIR=$(SERVER_DIR) \
+		FROM_FULL_TAG=$* \
+		BUILDFILE=$@
+
+images/server: $(BUILDFILE_PREFIX).server.latest-$(SRC_OS_NAME)-$(IMG_ARCH)
+.PHONY: images/server
+
+images/server: $(BUILDFILE_PREFIX).server.nightly-$(SRC_OS_NAME)-$(IMG_ARCH)
+.PHONY: images/server-nightly
+
+
+build-server: $(BUILDFILE_SERVER)
+.PHONY: build-server
+$(BUILDFILE_SERVER): $(BUILDFILE_PREFIX).server.latest-$(SRC_OS_NAME)-$(IMG_ARCH)
+ifeq ($(SRC_OS_NAME)-$(IMG_ARCH),fedora-amd64)
+	$(MAKE) _img_tag \
+		SRC_IMG=samba-server:latest-$(SRC_OS_NAME)-$(IMG_ARCH) \
+		DST_IMGS="$(SERVER_NAME) $(SERVER_REPO_NAME)" \
 		BUILDFILE=$(BUILDFILE_SERVER)
+else
+	@echo "Not default OS base and architecture"
+endif
+
+build-nightly-server: $(BUILDFILE_NIGHTLY_SERVER)
+.PHONY: build-nightly-server
+$(BUILDFILE_NIGHTLY_SERVER): $(BUILDFILE_PREFIX).server.nightly-$(SRC_OS_NAME)-$(IMG_ARCH)
+ifeq ($(SRC_OS_NAME)-$(IMG_ARCH),fedora-amd64)
+	$(MAKE) _img_tag \
+		SRC_IMG=samba-server:nightly-$(SRC_OS_NAME)-$(IMG_ARCH) \
+		DST_IMGS="$(NIGHTLY_SERVER_NAME) $(NIGHTLY_SERVER_REPO_NAME)" \
+		BUILDFILE=$(BUILDFILE_SERVER)
+else
+	@echo "Not default OS base and architecture"
+endif
+
+
 
 push-server: build-server
 	$(PUSH_CMD) $(SERVER_REPO_NAME)
 .PHONY: push-server
 
-build-nightly-server: $(BUILDFILE_NIGHTLY_SERVER)
-.PHONY: build-nightly-server
-$(BUILDFILE_NIGHTLY_SERVER): Makefile $(SERVER_SRC_FILE) $(SERVER_SOURCES)
-	$(MAKE) _img_build \
-		BUILD_ARGS="--build-arg=INSTALL_PACKAGES_FROM='samba-nightly'"  \
-		EXTRA_BUILD_ARGS="$(EXTRA_BUILD_ARGS)" \
-		SHORT_NAME=$(NIGHTLY_SERVER_NAME) \
-		REPO_NAME=$(NIGHTLY_SERVER_REPO_NAME) \
-		SRC_FILE=$(SERVER_SRC_FILE) \
-		DIR=$(SERVER_DIR) \
-		BUILDFILE=$(BUILDFILE_NIGHTLY_SERVER)
+#build-nightly-server: $(BUILDFILE_NIGHTLY_SERVER)
+#.PHONY: build-nightly-server
+#$(BUILDFILE_NIGHTLY_SERVER): Makefile $(SERVER_SRC_FILE) $(SERVER_SOURCES)
+#	$(MAKE) _img_build \
+#		BUILD_ARGS="--build-arg=INSTALL_PACKAGES_FROM='samba-nightly'"  \
+#		EXTRA_BUILD_ARGS="$(EXTRA_BUILD_ARGS)" \
+#		SHORT_NAME=$(NIGHTLY_SERVER_NAME) \
+#		REPO_NAME=$(NIGHTLY_SERVER_REPO_NAME) \
+#		SRC_FILE=$(SERVER_SRC_FILE) \
+#		DIR=$(SERVER_DIR) \
+#		BUILDFILE=$(BUILDFILE_NIGHTLY_SERVER)
 
 push-nightly-server: build-nightly-server
 	$(PUSH_CMD) $(NIGHTLY_SERVER_REPO_NAME)
@@ -281,14 +326,31 @@ clean:
 # BUILDFILE: path to a temporary file tracking build state
 _img_build: $(DIR)/.common
 	$(BUILD_CMD) \
+		--arch $(IMG_ARCH) \
 		$(BUILD_ARGS) \
+		$(if $(filter nightly,$(PKG_ORIGIN)),--build-arg=INSTALL_PACKAGES_FROM='samba-nightly') \
 		$(EXTRA_BUILD_ARGS) \
-		--tag $(SHORT_NAME) \
-		--tag $(REPO_NAME) \
+		--tag $(SHORT_NAME):$(FULL_TAG) \
+		--tag $(REPO_BASE)$(SHORT_NAME):$(FULL_TAG) \
 		-f $(SRC_FILE) \
 		$(DIR)
-	$(CONTAINER_CMD) inspect -f '{{.Id}}' $(SHORT_NAME) > $(BUILDFILE)
+	$(CONTAINER_CMD) inspect -f '{{.Id}}' $(SHORT_NAME):$(FULL_TAG) > $(BUILDFILE)
 .PHONY: _img_build
+
+# _img_tag is an internal rule for applying an additional tag
+# for an image and creating a matching buildfile.
+#
+# The following arguments are expected:
+# SRC_IMG: an existing image+tag
+# DST_IMGS: the new image name+tags
+# BUILDFILE: path to a temporary file tracking build state
+_img_tag:
+	# this is done in a loop because docker only supports one
+	# target per call, unlike podman
+	for target in $(DST_IMGS); do \
+		$(CONTAINER_CMD) tag $(SRC_IMG) $$target ; \
+	done
+	$(CONTAINER_CMD) inspect -f '{{.Id}}' $(lastword $(DST_IMGS)) > $(BUILDFILE)
 
 $(DIR)/.common: $(COMMON_DIR)
 	$(RM) -r $(DIR)/.common
