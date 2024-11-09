@@ -36,6 +36,7 @@ Usage:
 """
 
 import argparse
+import functools
 import logging
 import os
 import pathlib
@@ -52,7 +53,7 @@ logger = logging.getLogger("build-image")
 # the time. This was the previous behavior but we found it to have some issues.
 # When this is false the --arch flag is passed to podman ONLY when the target
 # arch != the host system arch.
-FORCE_ARCH_FLAG = False
+FORCE_ARCH_FLAG = True
 
 # IMAGE_KINDS - map aliases/names to canonical names for the kinds
 # of images we can build
@@ -102,9 +103,9 @@ DEVBUILDS = "devbuilds"
 PACKAGE_SOURCES = [DEFAULT, NIGHTLY, DEVBUILDS]
 
 PACKAGES_FROM = {
-    DEFAULT: '',
-    NIGHTLY: 'samba-nightly',
-    DEVBUILDS: 'devbuilds',
+    DEFAULT: "",
+    NIGHTLY: "samba-nightly",
+    DEVBUILDS: "devbuilds",
 }
 
 # SOURCE_DIRS - image source paths
@@ -121,7 +122,7 @@ DEFAULT_DISTRO_BASES = [FEDORA]
 LATEST = "latest"
 QUAL_NONE = "unqualified"
 QUAL_DISTRO = "distro-qualified"
-QUAL_FQIN = 'fqin'
+QUAL_FQIN = "fqin"
 
 
 _DISCOVERED_CONTAINER_ENGINES = []
@@ -201,6 +202,15 @@ def container_engine(cli):
     return _DISCOVERED_CONTAINER_ENGINES[0]
 
 
+def image_build(cli, target):
+    if isinstance(target, TargetIndex):
+        logger.debug("target is a manifest/index")
+        return index_build(cli, target)
+    else:
+        logger.debug("target is a container image")
+        return container_build(cli, target)
+
+
 def container_build(cli, target):
     """Construct and execute a command to build the target container image."""
     args = [container_engine(cli), "build"]
@@ -231,6 +241,27 @@ def container_build(cli, target):
     run(cli, args, check=True)
 
 
+def index_build(cli, target):
+    """Construct a new index or manifest."""
+    eng = container_engine(cli)
+    args = [eng, "manifest", "create", target.image_name()]
+    run(cli, args, check=True)
+    for img in target.contents:
+        add_args = [eng, "manifest", "add"]
+        add_args.append(
+            "--annotation=org.samba.samba-container.pkg-source="
+            f"{img.pkg_source}"
+        )
+        add_args.append(
+            "--annotation=org.samba.samba-container.distro=" f"{img.distro}"
+        )
+        add_args += [target.image_name(), img.image_name()]
+        run(cli, add_args, check=True)
+    for tname in target.all_names(baseless=cli.without_repo_bases):
+        tag_args = [eng, "tag", target.image_name(), tname]
+        run(cli, tag_args, check=True)
+
+
 def container_push(cli, push_name):
     """Construct and execute a command to push a container image."""
     args = [container_engine(cli), "push", push_name]
@@ -241,6 +272,15 @@ def container_id(cli, target):
     """Construct and run a command to fetch a hexidecimal id for a container
     image.
     """
+    if isinstance(target, TargetIndex):
+        args = [
+            container_engine(cli),
+            "manifest",
+            "exists",
+            target.image_name(),
+        ]
+        res = run(cli, args, check=True)
+        return target.image_name()
     args = [
         container_engine(cli),
         "inspect",
@@ -250,6 +290,13 @@ def container_id(cli, target):
     ]
     res = run(cli, args, capture_output=True, check=True)
     return res.stdout.decode("utf8").strip()
+
+
+def maybe_container_id(cli, target):
+    try:
+        return container_id(cli, target)
+    except subprocess.CalledProcessError:
+        return None
 
 
 def container_tag(cli, target, tag, *tags):
@@ -279,7 +326,9 @@ def kind_source_dir(kind):
 
 def target_containerfile(target):
     """Return the path to a containerfile given an image target."""
-    return str(kind_source_dir(target.name) / f"Containerfile.{target.distro}")
+    return str(
+        kind_source_dir(target.name) / f"Containerfile.{target.distro}"
+    )
 
 
 def host_arch():
@@ -301,25 +350,18 @@ class RepoConfig:
         return self.distro_map.get(distro, self.default)
 
 
-class TargetImage:
-    def __init__(
-        self, name, pkg_source, distro, arch, extra_tag="", *, repo_base=""
-    ):
-        self.name = name
-        self.pkg_source = pkg_source
-        self.distro = distro
-        self.arch = arch
-        self.extra_tag = extra_tag
-        self.repo_base = repo_base
-        self.additional_tags = []
+def _split_img(image_name, max_tag_split=3):
+    if "/" in image_name:
+        base, rest = image_name.rsplit("/", 1)
+    else:
+        base = ""
+        rest = image_name
+    iname, tag = rest.split(":", 1)
+    tparts = tag.split("-", max_tag_split)
+    return base, iname, tparts
 
-    def tag_name(self):
-        tag_parts = [self.pkg_source, self.distro, self.arch]
-        if self.extra_tag:
-            tag_parts.append(self.extra_tag)
-        tag = "-".join(tag_parts)
-        return tag
 
+class TargetObject:
     def image_name(self, *, tag=None, repo_base=None):
         if not tag:
             tag = self.tag_name()
@@ -347,15 +389,35 @@ class TargetImage:
                     continue
                 yield self.image_name(tag=tag, repo_base="")
 
+    def supports_arch(self, arch):
+        return False
+
+
+class TargetImage(TargetObject):
+    def __init__(
+        self, name, pkg_source, distro, arch, extra_tag="", *, repo_base=""
+    ):
+        self.name = name
+        self.pkg_source = pkg_source
+        self.distro = distro
+        self.arch = arch
+        self.extra_tag = extra_tag
+        self.repo_base = repo_base
+        self.additional_tags = []
+
+    def tag_name(self):
+        tag_parts = [self.pkg_source, self.distro, self.arch]
+        if self.extra_tag:
+            tag_parts.append(self.extra_tag)
+        tag = "-".join(tag_parts)
+        return tag
+
+    def supports_arch(self, arch):
+        return self.arch == arch
+
     @classmethod
     def parse(cls, image_name):
-        if "/" in image_name:
-            base, rest = image_name.rsplit("/", 1)
-        else:
-            base = ""
-            rest = image_name
-        iname, tag = rest.split(":", 1)
-        tparts = tag.split("-", 3)
+        base, iname, tparts = _split_img(image_name)
         if len(tparts) < 3:
             raise ValueError(f"too few tag components: {tag!r}")
         return cls(
@@ -368,31 +430,115 @@ class TargetImage:
         )
 
 
-def generate_images(cli):
-    """Given full image names or a matrix of kind/pkg_source/distro_base/arch
-    values generate a list of target images to build/process.
-    """
-    images = {}
-    for img in cli.image or []:
-        images[str(img)] = img
-    rc = RepoConfig(cli.repo_base, cli.repo_base_for)
-    for kind in cli.kind or []:
-        for pkg_source in cli.package_source or DEFAULT_PKG_SOURCES:
-            for distro_base in cli.distro_base or DEFAULT_DISTRO_BASES:
-                for arch in cli.arch or default_arches():
-                    timg = TargetImage(
-                        kind,
-                        pkg_source,
-                        distro_base,
-                        arch,
-                        extra_tag=(cli.extra_tag or ""),
-                        repo_base=rc.find_base(distro_base),
-                    )
-                    images[str(timg)] = timg
-    return list(images.values())
+class TargetIndex(TargetObject):
+    def __init__(
+        self,
+        name,
+        *,
+        pkg_source,
+        distro,
+        contents=None,
+        extra_tag="",
+        repo_base="",
+    ):
+        self.name = name
+        self.pkg_source = pkg_source
+        self.distro = distro
+        self.contents = contents or []
+        self.repo_base = repo_base
+        self.extra_tag = ""
+        self.additional_tags = []
+
+    def key(self):
+        return (self.name, self.pkg_source, self.distro)
+
+    def tag_name(self):
+        tag_parts = [self.pkg_source, self.distro]
+        if self.extra_tag:
+            tag_parts.append(self.extra_tag)
+        tag = "-".join(tag_parts)
+        return tag
+
+    def supports_arch(self, arch):
+        return True
+
+    @classmethod
+    def from_image(cls, img):
+        return cls(
+            img.name,
+            pkg_source=img.pkg_source,
+            distro=img.distro,
+            contents=[img],
+            repo_base=img.repo_base or "",
+        )
+
+    def merge(self, other):
+        assert self.name == other.name
+        assert self.pkg_source == other.pkg_source
+        assert self.distro == other.distro
+        self.contents.extend(other.contents)
 
 
-def add_special_tags(img, distro_qualified=True):
+class TargetGroup:
+    def __init__(self, images=None, indexes=None):
+        self.images = images or []
+        self.indexes = indexes or []
+
+    def __bool__(self):
+        return bool(self.images or self.indexes)
+
+    @classmethod
+    def generate(cls, cli):
+        """Given image names or a matrix of image properties, generate a group
+        of images that satisfy the input parameters.
+        """
+        images = {}
+        for img in cli.image or []:
+            images[str(img)] = img
+        rc = RepoConfig(cli.repo_base, cli.repo_base_for)
+        for kind in cli.kind or []:
+            for pkg_source in cli.package_source or DEFAULT_PKG_SOURCES:
+                for distro_base in cli.distro_base or DEFAULT_DISTRO_BASES:
+                    for arch in cli.arch or default_arches():
+                        timg = TargetImage(
+                            kind,
+                            pkg_source,
+                            distro_base,
+                            arch,
+                            extra_tag=(cli.extra_tag or ""),
+                            repo_base=rc.find_base(distro_base),
+                        )
+                        images[str(timg)] = timg
+        group = cls(images=list(images.values()))
+        if cli.combined:
+            group._build_indexes()
+        group._expand_special_tags(distro_qualified=cli.distro_qualified)
+        return group
+
+    def _expand_special_tags(self, distro_qualified=True):
+        if self.indexes:
+            for image in self.indexes:
+                # distro qualified is redundant with the default tag of an
+                # index/manifest as well as mainly needed for backwards
+                # compatibility something we don't want for indexes.
+                _add_special_tags(image, distro_qualified=False)
+        else:
+            for image in self.images:
+                _add_special_tags(image, distro_qualified=distro_qualified)
+
+    def _build_indexes(self):
+        _indexes = {}
+        for image in self.images:
+            image_index = TargetIndex.from_image(image)
+            key = image_index.key()
+            if key in _indexes:
+                _indexes[key].merge(image_index)
+            else:
+                _indexes[key] = image_index
+        self.indexes = list(_indexes.values())
+
+
+def _add_special_tags(img, distro_qualified=True):
     """Certain images have special tags. Given an image, add general (non-FQIN)
     tags to that image.
     """
@@ -402,29 +548,35 @@ def add_special_tags(img, distro_qualified=True):
     # the project.
     _host_arch = host_arch()
     if img.distro in [FEDORA, OPENSUSE]:
-        if img.arch == _host_arch and img.pkg_source == DEFAULT:
+        if img.supports_arch(_host_arch) and img.pkg_source == DEFAULT:
             img.additional_tags.append((LATEST, QUAL_NONE))
-        if img.arch == _host_arch and img.pkg_source == NIGHTLY:
+        if img.supports_arch(_host_arch) and img.pkg_source == NIGHTLY:
             img.additional_tags.append((NIGHTLY, QUAL_NONE))
     if not distro_qualified:
         return  # skip creating "distro qualified" tags
-    if img.arch == _host_arch and img.pkg_source == DEFAULT:
+    if img.supports_arch(_host_arch) and img.pkg_source == DEFAULT:
         img.additional_tags.append((f"{img.distro}-{LATEST}", QUAL_DISTRO))
-    if img.arch == _host_arch and img.pkg_source == NIGHTLY:
+    if img.supports_arch(_host_arch) and img.pkg_source == NIGHTLY:
         img.additional_tags.append((f"{img.distro}-{NIGHTLY}", QUAL_DISTRO))
 
 
-def build(cli, target):
+def build(cli, target, rebuild=True):
     """Command to build images."""
     build_file = pathlib.Path(f"{cli.buildfile_prefix}{target.flat_name()}")
     common_src = "./images/common"
     common_dst = str(kind_source_dir(target.name) / ".common")
     logger.debug("Copying common tree: %r -> %r", common_src, common_dst)
     shutil.copytree(common_src, common_dst, dirs_exist_ok=True)
-    container_build(cli, target)
-    cid = container_id(cli, target)
+    cid = maybe_container_id(cli, target)
+    if not cid or rebuild:
+        image_build(cli, target)
+        cid = container_id(cli, target)
     with open(build_file, "w") as fh:
         fh.write(f"{cid} {target.image_name()}\n")
+
+
+def build_missing(cli, target):
+    return build(cli, target, rebuild=False)
 
 
 class QMatcher:
@@ -476,13 +628,10 @@ class QMatcher:
 
 def push(cli, target):
     """Command to push images."""
-    if cli.push_state == "rebuild":
+    if cli.push_state == "rebuild" or (
+        cli.push_state == "exists" and not maybe_container_id(cli, target)
+    ):
         build(cli, target)
-    if cli.push_state == "exists":
-        try:
-            container_id(cli, target)
-        except subprocess.CalledProcessError:
-            build(cli, target)
 
     to_push = []
     push_name = target.image_name()
@@ -496,6 +645,22 @@ def push(cli, target):
     for push_name, tag_qual in to_push:
         if qmatcher(tag_qual):
             container_push(cli, push_name)
+
+
+def archive(cli, target, location):
+    """Write tarballs to archive location."""
+    if isinstance(target, TargetIndex):
+        return  # ignore indexes/manifests
+    # reuse push_stage flag. TODO rename flag
+    if cli.push_state == "rebuild" or (
+        cli.push_state == "exists" and not maybe_container_id(cli, target)
+    ):
+        build(cli, target)
+
+    eng = container_engine(cli)
+    fname = pathlib.Path(location) / f"{target.flat_name()}.tar"
+    args = [eng, "save", f"-o{fname}", target.image_name()]
+    run(cli, args, check=True)
 
 
 def retag(cli, target):
@@ -534,6 +699,14 @@ def print_tags(cli, target):
     ):
         prefix = "" if idx == 0 else "  "
         print(f"{prefix}{name}")
+
+
+def _kwbind(func, key, conversion=None):
+    def _capture(arg_value):
+        value = conversion(arg_value) if conversion else arg_value
+        return functools.partial(func, **{key: value})
+
+    return _capture
 
 
 def main():
@@ -631,9 +804,7 @@ def main():
         ),
     )
     parser.add_argument(
-        "--push-selected-tags",
-        type=QMatcher,
-        help=QMatcher.__doc__
+        "--push-selected-tags", type=QMatcher, help=QMatcher.__doc__
     )
     parser.add_argument(
         "--buildfile-prefix",
@@ -664,7 +835,21 @@ def main():
             " will be created."
         ),
     )
+    parser.add_argument(
+        "--combined",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=("Specify if manifests/image indexes should be created."),
+    )
+
     behaviors = parser.add_mutually_exclusive_group()
+    behaviors.add_argument(
+        "--build-missing",
+        action="store_const",
+        dest="main_action",
+        const=build_missing,
+        help="Build images not in local storage",
+    )
     behaviors.add_argument(
         "--push",
         action="store_const",
@@ -698,8 +883,17 @@ def main():
         action="store_const",
         dest="main_action",
         const=retag,
-        help=("Regenerate any short (unqualified) tags expected to exist"
-              " for a given FQIN. Requires FQIN to already exist locally."),
+        help=(
+            "Regenerate any short (unqualified) tags expected to exist"
+            " for a given FQIN. Requires FQIN to already exist locally."
+        ),
+    )
+    behaviors.add_argument(
+        "--archive",
+        metavar="LOCATION",
+        dest="main_action",
+        type=_kwbind(archive, "location"),
+        help="Write archive files (tarballs) to a specified location",
     )
     cli = parser.parse_args()
 
@@ -708,17 +902,23 @@ def main():
     logging.basicConfig(level=cli.log_level)
 
     _action = cli.main_action if cli.main_action else build
-    imgs = []
+    group = None
     try:
-        imgs = generate_images(cli)
-        for img in imgs:
-            add_special_tags(img, cli.distro_qualified)
+        group = TargetGroup.generate(cli)
+        for img in group.images:
             logger.info("Image %s, extra tags: %s", img, img.additional_tags)
             _action(cli, img)
+        for index in group.indexes:
+            logger.info(
+                "Index/Manifest %s, extra tags: %s",
+                index,
+                index.additional_tags,
+            )
+            _action(cli, index)
     except subprocess.CalledProcessError as err:
         logger.error("Failed command: %s", _cmd_to_str(err.cmd))
         sys.exit(err.returncode)
-    if not imgs:
+    if not group:
         logger.error("No images or image kinds supplied")
         sys.exit(2)
 
