@@ -2,9 +2,9 @@ name: Samba Container Image CI
 
 on:
   push:
-    branches: [master]
+    branches: [wip]
   pull_request:
-    branches: [master]
+    branches: [wip]
   schedule:
     - cron: '0 2 * * *'
   # Allow manually triggering a run in the github ui.
@@ -290,13 +290,13 @@ jobs:
       - test-ad-server-kubernetes
     runs-on: ubuntu-latest
     env:
-      REPO_BASE: quay.io/samba.org
+      REPO_BASE: quay.io/phlogistonjohn
     # NOTE: the fromJSON below is needed beause the syntax github uses
     # doesn't actually understand JS/JSON style arrays (inline). When I left it
     # out I just got an error. It is present in their example(s).
     if: >
       contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)
-      && github.repository == 'samba-in-kubernetes/samba-container'
+      && github.repository == 'phlogistonjohn/samba-container'
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
       - name: log in to quay.io
