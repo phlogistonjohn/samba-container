@@ -347,6 +347,7 @@ jobs:
       - name: Create manifests/indexes
         run: >
           ./hack/build-image
+          --debug
           --index
           --container-engine=${CONTAINER_CMD}
           -i ${REPO_BASE}/samba-server:ceph20-centos-amd64
@@ -379,6 +380,7 @@ jobs:
       - name: Push images
         run: >
           ./hack/build-image
+          --debug
           --push
           --container-engine=${CONTAINER_CMD}
           --verbose
